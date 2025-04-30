@@ -17,9 +17,9 @@ import winreg
 import sys
 
 
-TOKEN = 'MTM2Mzk3NzMyNDI5ODUwNjMzMA.GFzMBJ.5RCoY7rRJnk46hDTvEuQ1Sho5JENIqFG2nMcqg'
-WEBHOOK_URL = 'https://discord.com/api/webhooks/1366866328186519725/RbcFre6X_qohyZpUbeQjr-S2Rbsrh3iIWzfhJ9cwmi-bB0-ryxh8oetLEf394w5GS4Km'
-ALLOWED_USER_ID = '1114278079959945226'
+TOKEN = ''
+WEBHOOK_URL = ''
+ALLOWED_USER_ID = ''
 
 intents = discord.Intents.default()
 intents.message_content = True
